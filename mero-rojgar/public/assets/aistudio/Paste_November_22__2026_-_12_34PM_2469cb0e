@@ -1,0 +1,540 @@
+v3.0
+This is the engineering-grade version of the Master PRD: it keeps every product rule and adds a production frontend, database and backend specification you can paste into an AI builder (Google AI Studio, Cursor, Claude Code) one section at a time.
+0. Master instruction (paste first)
+You are a principal full-stack engineer and product designer building "Mero Job Nepal":
+an employment, recruitment, freelance, networking, HR and sponsor-funded rewards platform
+for Nepal, designed to expand worldwide.
+
+Build production-grade code, not demos. For every module deliver: database migration,
+RLS policies, server functions, typed API client, UI, tests, and seed data.
+Never put secrets, ledger logic or authorization decisions in client code.
+Work in the order of Section 6 (Build Sequence). After each step, list what is done,
+what is stubbed, and what needs legal/partner approval.
+Non-negotiable rules (apply to every module):
+1.  Money is never a mutable number. Balances are derived from an append-only ledger.
+2.  The client never decides rewards, rankings, verification status or permissions.
+3.  AI is advisory. No AI output automatically rejects, ranks out or blocks a person.
+4.  Self-reported data is never displayed as verified.
+5.  Rewards are never tied to job applications, recruiter visibility or candidate ranking.
+6.  No AdMob/AdSense inventory in the cash-reward flow; only directly funded sponsor campaigns.
+7.  Default to Nepali + English, low-bandwidth, low-end Android (2 GB RAM, 3G).
+8.  Data minimisation: collect only what a feature needs; every sensitive field has a purpose and retention rule.
+1. Technology stack and repository
+Layer
+Choice
+Reason
+Web app
+Next.js 15 (App Router), React 19, TypeScript strict
+SSR/ISR for SEO on job pages
+UI
+Tailwind CSS, Radix primitives, shadcn/ui, Framer Motion (sparingly)
+Accessible, themeable
+Mobile
+Capacitor wrapping the PWA first; React Native only if native perf is proven necessary
+One codebase
+Data fetching
+TanStack Query + generated typed SDK from OpenAPI/Supabase types
+Cache, retries, offline
+Forms
+React Hook Form + Zod (shared schemas with backend)
+One validation source
+Backend
+Supabase: Postgres 15+, Auth, Storage, Realtime, Edge Functions (Deno)
+Fast start, RLS
+Queue / jobs
+pgmq or Supabase Queues + pg_cron
+Alerts, auto-apply, payouts
+Search
+Postgres FTS (tsvector, Nepali-aware dictionary config) + pgvector
+Keyword + semantic
+AI
+Server-side gateway to approved LLM and embedding APIs
+Keys, logging, validation
+Observability
+Sentry, OpenTelemetry traces, structured logs, PostHog (consented)
+Debuggability
+Testing
+Vitest, Playwright, pgTAP, k6
+Unit, E2E, DB, load
+CI/CD
+GitHub Actions, preview deployments, migration checks
+Safe releases
+Monorepo layout:
+/apps/web            Next.js (job seeker, employer, sponsor, admin via route groups)
+/apps/mobile         Capacitor shell
+/packages/ui         Design system components
+/packages/schemas    Zod schemas shared by client + edge functions
+/packages/sdk        Generated typed API client
+/packages/i18n       en.json, ne.json, message extraction tooling
+/supabase/migrations Ordered SQL migrations
+/supabase/functions  Edge functions (one folder each)
+/supabase/tests      pgTAP tests (RLS, ledger invariants)
+/docs                ADRs, threat model, runbooks
+2. Frontend specification
+2.1 Design system
+• Tokens: CSS variables for color, spacing (4 px scale), radius, elevation, type scale. Light and dark themes. A brand palette with one primary, one accent, and semantic success/warning/danger/info colors. Minimum contrast WCAG 2.2 AA.
+• Typography: Inter for Latin, Noto Sans Devanagari for Nepali, loaded with font-display: swap and subset to reduce weight. Line height tuned for Devanagari (1.6+).
+• Components (build and document in Storybook): Button, IconButton, Input, PhoneInput (+977), OTPInput, Select, Combobox (skills, locations), MultiSelect, DateRangePicker, Slider (salary), Tabs, Dialog, Drawer, BottomSheet, Toast, Skeleton, EmptyState, Badge (verification levels), Avatar, DataTable (virtualized), KanbanBoard, Stepper, FileDropzone, ProgressRing, Chart wrappers, Stat card, Timeline, RichTextEditor (job descriptions).
+• Trust components: VerificationBadge (self-reported / document submitted / identity checked / education checked / employer confirmed / assessment completed) with a popover stating exactly what was checked, by whom and when. ExplainabilityPanel showing why a job or candidate was matched. SponsorDisclosure bar on every rewards task.
+2.2 Information architecture and routing
+Use route groups so one codebase serves four experiences with role-aware layouts.
+(app)/            Job seeker shell, bottom nav: Home, Jobs, Gigs, Rewards, Profile
+(employer)/       Employer shell: Dashboard, Post Job, Applicants, Talent, Company
+(sponsor)/        Sponsor campaign dashboard
+(admin)/          Admin console (desktop-first, sidebar)
+(public)/         SEO pages: /jobs, /jobs/[slug], /companies/[slug], /salaries, /learn
+(auth)/           Sign in, sign up, OTP, role switch, recovery
+A role switcher in the profile menu changes active role and organization context. The active context is stored server-side in the session and echoed into every request; the UI never trusts its own copy.
+2.3 State, data and offline
+• Server state in TanStack Query with typed query keys per domain. Optimistic updates only for non-financial actions (save job, follow, mark notification read).
+• Client UI state in Zustand, small and local. No financial or permission state stored client-side.
+• PWA with a service worker (Workbox): app-shell precache, stale-while-revalidate for job lists, background sync for drafts and application submissions, offline banner and queued-action indicators.
+• Resumable uploads (tus) for CVs and sponsor videos; client-side image compression before upload; images served as AVIF/WebP with responsive sizes.
+• Realtime subscriptions (Supabase Realtime) only for messages, application status, notifications and wallet confirmations.
+2.4 Performance budget for low-end Android
+Metric
+Target
+Initial JS (job list route)
+under 170 KB gzipped
+LCP on 3G, mid-tier phone
+under 2.5 s
+INP
+under 200 ms
+Lists
+virtualized beyond 50 rows, cursor pagination
+Video
+adaptive HLS, 240p–720p, preload none, data-saver toggle
+Enforce budgets in CI with Lighthouse CI; fail the build on regression.
+2.4a Internationalisation and accessibility
+• All strings through ICU message format; ne and en complete at launch, hi structurally ready. Nepali numerals and Bikram Sambat dates optional per user, Gregorian stored in the database.
+• Currency formatting NPR by default, multi-currency ready (store minor units and ISO code).
+• Full keyboard navigation, screen-reader labels, focus management in dialogs, reduced-motion support, minimum 44 px touch targets, voice-input button on every search field.
+2.5 Key screens (build each with loading, empty, error and offline states)
+Job seeker
+1.  Home: profile-completion ring, recommended jobs with match reasons, saved-search alerts, voice search button, continue-application drafts, rewards teaser (clearly separate section).
+2.  Jobs: sticky search bar with voice, filter bottom sheet (title, skills, company, location radius, salary, education, experience, employment type, schedule, remote, urgent, verified employers, posted date), map/list toggle, job compare tray, salary-transparency chip.
+3.  Job detail: company trust panel (verification level), match breakdown (skills, experience, qualification, location, salary) with missing-requirements list, scam-risk indicator with reason, apply sheet with custom questionnaire, one-tap apply with chosen CV version.
+4.  Resume Studio: upload/parse review screen (every extracted field editable and flagged), template gallery, side-by-side editor and live preview, ATS-check score, Nepali/English toggle, version history with restore. AI suggestions are shown as diffs the user accepts; AI cannot invent experience.
+5.  Auto Apply: rule builder, mandatory plain-language summary of rules before activation, daily cap, excluded companies, approved CV selector, pause switch, full log of every submitted application with withdraw action.
+6.  Applications: pipeline tracker per application, interview invitations, calendar add, reminders.
+7.  Skill Passport: badge wall, evidence per claim, assessment history showing provider, date, method, result.
+8.  Interview Coach: voice and text mock interviews, per-answer feedback, transcript, practice history.
+9.  Gigs: browse, proposal composer, milestones, deliverable submission, reviews.
+10.  Rewards: wallet header (approved, pending, available, withdrawn, rejected), campaign cards (sponsor, duration, reward, eligibility, remaining budget, end date, terms), task player, ledger history, withdrawal flow. A persistent note states that rewards depend on funded campaigns and are not employment income.
+11.  Privacy center: visibility mode (public, recruiter-visible, private), contact-hiding toggle, consent log, data export, delete account.
+Employer
+1.  Dashboard: vacancies, applicants needing action, interview schedule, spend, funnel chart.
+2.  Post Job Studio: stepper (basics, requirements, questionnaire, salary, preview, publish), AI description writer with diff acceptance, templates, drafts, bulk campaign upload (CSV).
+3.  ATS: Kanban pipeline (New, Under Review, Shortlisted, Assessment, Interview, Offer, Hired/Rejected), drag to move, bulk actions, candidate drawer with CV preview, notes, tags, history, comparison view (2–4 candidates), team assignment, keyboard shortcuts.
+4.  Talent search: opt-in resume database with faceted filters, credit meter, contact request flow with audit trail.
+5.  Talent Rosters, Insta Hire, Company page editor, Analytics, HR workspace.
+Sponsor: campaign wizard (creative upload, budget funding, audience, completion rule, reward value, duration), live verified-completion counters, spend vs budget, report export.
+Admin: overview KPIs, verification queue with document viewer, moderation queue, fraud case workspace, ledger explorer, withdrawal approval queue with two-step approval, audit log search, feature flags.
+2.6 Rewards task player (security-sensitive UI)
+• The player requests a signed, short-lived task session from the server; it never computes or submits a reward amount.
+• Playback progress is reported as periodic heartbeats; the server validates elapsed time against video duration and tolerance.
+• The content question is fetched only after the server confirms minimum watch time; answers are verified server-side.
+• No auto-click or ad-click rewards. The UI shows sponsor identity and reward before start and the result state (pending review) after finish.
+2.7 Frontend quality gates
+• Zod validation on every form; error messages in both languages.
+• Playwright E2E: sign up, post job, apply, move pipeline stage, complete a reward task, request withdrawal.
+• Visual regression on core components; axe accessibility checks in CI.
+• Error boundaries per route, Sentry release tracking, feature flags for every Phase 3+ module.
+3. Database specification
+3.1 Conventions
+• PostgreSQL 15+, extensions: pgcrypto, pg_trgm, unaccent, vector, pg_cron, postgis, btree_gin.
+• Primary keys uuid (gen_random_uuid()); timestamps timestamptz; soft delete via deleted_at; money as bigint minor units (paisa) plus currency char(3).
+• Every table has created_at, updated_at; tenant tables carry organization_id. Enums as Postgres enum types or lookup tables.
+• Schemas: core, jobs, recruit, gigs, network, rewards, hr, ops, ai. Public access only through views and RPCs.
+• Row-Level Security enabled on every table, default deny. Policy helper functions: auth.uid(), core.has_role(role), core.is_org_member(org_id, min_role).
+3.2 Identity and tenancy
+create type core.role_kind as enum
+  ('job_seeker','employer','recruiter','freelancer','skilled_worker','company_admin','platform_admin','sponsor');
+
+create table core.users (
+  id uuid primary key references auth.users(id) on delete cascade,
+  phone text unique, email text unique,
+  display_name text not null,
+  locale text not null default 'ne',
+  active_role core.role_kind,
+  status text not null default 'active' check (status in ('active','suspended','deleted')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table core.user_roles (
+  user_id uuid references core.users(id) on delete cascade,
+  role core.role_kind not null,
+  granted_by uuid, granted_at timestamptz not null default now(),
+  primary key (user_id, role)
+);
+
+create table core.organizations (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null check (kind in ('employer','agency','sponsor')),
+  legal_name text not null, display_name text not null, slug text unique not null,
+  pan_number text, industry_id int, country char(2) not null default 'NP',
+  verification_level smallint not null default 0, -- 0 none,1 contact,2 documents,3 admin-reviewed
+  created_at timestamptz not null default now()
+);
+
+create table core.org_members (
+  org_id uuid references core.organizations(id) on delete cascade,
+  user_id uuid references core.users(id) on delete cascade,
+  org_role text not null check (org_role in ('owner','admin','recruiter','hiring_manager','viewer')),
+  primary key (org_id, user_id)
+);
+
+create table core.consents (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references core.users(id) on delete cascade,
+  purpose text not null,            -- recruiter_discovery, marketing, analytics, rewards_terms
+  granted boolean not null, policy_version text not null,
+  recorded_at timestamptz not null default now()
+);
+3.3 Candidates and Skill Passport
+create table core.candidate_profiles (
+  user_id uuid primary key references core.users(id) on delete cascade,
+  headline text, summary text, current_location geography(point),
+  district_id int, expected_salary_min bigint, expected_salary_max bigint,
+  availability text, visibility text not null default 'private'
+    check (visibility in ('public','recruiter_visible','private')),
+  open_status text not null default 'open_to_opportunities',
+  contact_hidden boolean not null default true,
+  profile_completion smallint not null default 0,
+  embedding vector(768), search_tsv tsvector,
+  updated_at timestamptz not null default now()
+);
+
+create table core.skills (id serial primary key, name_en text unique not null, name_ne text, category text);
+create table core.candidate_skills (
+  user_id uuid references core.users(id) on delete cascade,
+  skill_id int references core.skills(id),
+  level smallint check (level between 1 and 5),
+  verification text not null default 'self_reported'
+    check (verification in ('self_reported','document_submitted','identity_checked','education_checked','employer_confirmed','assessment_completed')),
+  primary key (user_id, skill_id)
+);
+
+create table core.skill_evidence (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null, skill_id int, kind text not null,
+  provider text, method text, result jsonb, assessed_at timestamptz,
+  document_id uuid, verified_by uuid, verified_at timestamptz
+);
+
+create table core.candidate_documents (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references core.users(id) on delete cascade,
+  kind text not null, storage_path text not null, sha256 text not null,
+  parsed jsonb, is_default_cv boolean default false, version int not null default 1,
+  created_at timestamptz not null default now()
+);
+Also create: candidate_education, candidate_experience, candidate_portfolios, resume_versions (immutable snapshots with source_document_id and ai_assisted boolean), assessments, assessment_attempts.
+3.4 Jobs and search
+create table jobs.jobs (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references core.organizations(id),
+  posted_by uuid not null references core.users(id),
+  title text not null, slug text unique not null, description text not null,
+  employment_type text not null, work_mode text not null check (work_mode in ('onsite','hybrid','remote')),
+  category_id int, salary_min bigint, salary_max bigint, salary_currency char(3) default 'NPR',
+  salary_visible boolean default true,
+  experience_min_months int, education_level text,
+  location geography(point), district_id int, country char(2) default 'NP',
+  is_urgent boolean default false, is_featured boolean default false,
+  status text not null default 'draft' check (status in ('draft','pending_review','published','paused','closed','rejected')),
+  scam_risk_score numeric(4,3), scam_risk_reasons jsonb,
+  published_at timestamptz, closes_at timestamptz,
+  search_tsv tsvector, embedding vector(768),
+  created_at timestamptz not null default now()
+);
+create index jobs_tsv_idx on jobs.jobs using gin(search_tsv);
+create index jobs_geo_idx on jobs.jobs using gist(location);
+create index jobs_vec_idx on jobs.jobs using hnsw (embedding vector_cosine_ops);
+create index jobs_filter_idx on jobs.jobs (status, category_id, district_id, published_at desc);
+Also create: job_skills(job_id, skill_id, required boolean, weight), job_questions, job_templates, saved_jobs, job_alerts (stored filter JSON + channel + frequency), company_reviews (moderated).
+Search RPC jobs.search(query, filters jsonb, user_lat, user_lng, cursor) combines: full-text rank, trigram fuzzy match, filter predicates, distance, and an optional semantic re-rank using embeddings; returns match_reasons and uses keyset pagination.
+3.5 Recruitment and ATS
+create table recruit.applications (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null references jobs.jobs(id),
+  candidate_id uuid not null references core.users(id),
+  resume_version_id uuid not null,
+  source text not null default 'manual' check (source in ('manual','auto_apply','invite','insta_hire')),
+  stage text not null default 'new'
+    check (stage in ('new','under_review','shortlisted','assessment','interview','offer','hired','rejected','withdrawn')),
+  match_snapshot jsonb,           -- explainable breakdown at time of applying
+  assigned_to uuid, created_at timestamptz not null default now(),
+  unique (job_id, candidate_id)
+);
+
+create table recruit.application_events (
+  id bigint generated always as identity primary key,
+  application_id uuid not null references recruit.applications(id),
+  actor_id uuid, event_type text not null, from_stage text, to_stage text,
+  payload jsonb, created_at timestamptz not null default now()
+);
+Also create: questionnaire_answers, interviews (+ interview_slots, interview_feedback), job_offers, candidate_rosters (+ roster_members with consent_status), recruitment_notes (org-private), contact_requests (credit cost, candidate approval, audit), auto_apply_rules (rule JSON, daily cap, paused, excluded orgs, approved resume_version_id) and auto_apply_runs.
+application_events is append-only: stage changes happen via an RPC that writes the event and updates the row in one transaction.
+3.6 Mero Rewards: sponsor budgets and the immutable ledger
+This is the most critical part of the database. Design it as double-entry accounting.
+create table rewards.ledger_accounts (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null check (kind in ('sponsor_funding','campaign_escrow_reserve','user_pending','user_available','user_paid_out','platform_revenue','fees','fraud_reversal')),
+  owner_user_id uuid, owner_org_id uuid, campaign_id uuid,
+  currency char(3) not null default 'NPR'
+);
+
+create table rewards.sponsor_campaigns (
+  id uuid primary key default gen_random_uuid(),
+  sponsor_org_id uuid not null references core.organizations(id),
+  title text not null, creative_asset_id uuid, video_seconds int not null,
+  sponsor_cost_per_completion bigint not null,      -- paisa
+  user_reward_per_completion bigint not null,       -- paisa
+  check (sponsor_cost_per_completion > user_reward_per_completion),
+  funded_amount bigint not null default 0,
+  reserved_amount bigint not null default 0,
+  spent_amount bigint not null default 0,
+  check (spent_amount + reserved_amount <= funded_amount),   -- cannot be overspent
+  min_watch_ratio numeric(3,2) not null default 0.90,
+  eligibility jsonb, terms_url text,
+  status text not null default 'draft'
+    check (status in ('draft','pending_review','funded','live','paused','exhausted','ended','rejected')),
+  starts_at timestamptz, ends_at timestamptz
+);
+
+create table rewards.ledger_entries (
+  id bigint generated always as identity primary key,
+  txn_id uuid not null,                       -- groups the debit and credit lines
+  account_id uuid not null references rewards.ledger_accounts(id),
+  direction text not null check (direction in ('debit','credit')),
+  amount bigint not null check (amount > 0),
+  reason text not null,                        -- completion_approved, withdrawal_requested, fraud_reversal ...
+  campaign_id uuid, completion_id uuid, withdrawal_id uuid,
+  idempotency_key text not null,
+  created_by text not null,                    -- 'system:approver' or admin user id
+  created_at timestamptz not null default now(),
+  unique (idempotency_key, account_id, direction)
+);
+
+-- Append-only: block UPDATE and DELETE for everyone including service roles
+create function rewards.forbid_mutation() returns trigger language plpgsql as $$
+begin raise exception 'ledger_entries is append-only'; end $$;
+create trigger ledger_no_update before update or delete on rewards.ledger_entries
+  for each row execute function rewards.forbid_mutation();
+
+-- Every txn must balance
+create function rewards.assert_balanced() returns trigger language plpgsql as $$
+declare d bigint; c bigint;
+begin
+  select coalesce(sum(amount) filter (where direction='debit'),0),
+         coalesce(sum(amount) filter (where direction='credit'),0)
+    into d, c from rewards.ledger_entries where txn_id = new.txn_id;
+  if d <> c then raise exception 'unbalanced txn %', new.txn_id; end if;
+  return null;
+end $$;
+create constraint trigger ledger_balanced after insert on rewards.ledger_entries
+  deferrable initially deferred for each row execute function rewards.assert_balanced();
+
+create view rewards.user_balances as
+  select a.owner_user_id as user_id,
+    sum(case when a.kind='user_pending'   then (case e.direction when 'credit' then e.amount else -e.amount end) end) as pending,
+    sum(case when a.kind='user_available' then (case e.direction when 'credit' then e.amount else -e.amount end) end) as available,
+    sum(case when a.kind='user_paid_out'  then (case e.direction when 'credit' then e.amount else -e.amount end) end) as paid_out
+  from rewards.ledger_entries e join rewards.ledger_accounts a on a.id = e.account_id
+  group by a.owner_user_id;
+Completion records and withdrawals:
+create table rewards.task_sessions (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null, user_id uuid not null,
+  issued_at timestamptz default now(), expires_at timestamptz not null,
+  device_fingerprint_hash text, ip_hash text,
+  heartbeat_count int default 0, watched_ms bigint default 0,
+  question_passed boolean, state text not null default 'started'
+    check (state in ('started','watching','question','submitted','expired','rejected'))
+);
+
+create table rewards.campaign_completions (
+  id uuid primary key default gen_random_uuid(),
+  task_session_id uuid not null unique references rewards.task_sessions(id),
+  campaign_id uuid not null, user_id uuid not null,
+  status text not null default 'pending_review'
+    check (status in ('pending_review','approved','rejected','reversed')),
+  risk_score numeric(4,3), reviewed_by text, reviewed_at timestamptz,
+  unique (campaign_id, user_id)     -- one credited completion per user per campaign
+);
+
+create table rewards.withdrawal_requests (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null, amount bigint not null check (amount >= 10000),  -- minimum threshold, configurable
+  method text not null, destination_ref_encrypted bytea not null,
+  status text not null default 'requested'
+    check (status in ('requested','under_review','approved','processing','paid','failed','rejected','refunded')),
+  approved_by uuid, second_approver uuid, provider_reference text,
+  created_at timestamptz default now()
+);
+
+create table rewards.fraud_flags (
+  id uuid primary key default gen_random_uuid(), user_id uuid, completion_id uuid,
+  signal text not null, severity smallint not null, details jsonb,
+  status text default 'open', created_at timestamptz default now()
+);
+Rules enforced in the database, not only the app:
+• Reward approval runs inside one SECURITY DEFINER function that locks the campaign row (FOR UPDATE), checks remaining budget, writes balanced ledger lines, and increments spent_amount atomically.
+• Clients have no INSERT, UPDATE or DELETE on any rewards table. They read their own rows through views.
+• Withdrawal creation moves funds from user_available to a hold account in the ledger at request time; payment success moves it to user_paid_out; failure releases the hold with a reversing entry.
+• Admin withdrawals above a configurable amount require two different approvers (approved_by <> second_approver).
+3.7 Other modules (create with the same conventions)
+• Gigs: gigs, proposals, contracts, milestones, deliverables, gig_reviews, disputes, dispute_evidence. Payment state references the licensed payment partner's transaction IDs; the platform stores references, not custodial balances.
+• Network: connections (status, requested_by), follows, posts, post_media, comments, reactions, endorsements, recommendations, groups, group_members, conversations, conversation_members, messages, blocks, content_reports.
+• HR: employees, employment_records, attendance_logs, leave_types, leave_requests, shifts, shift_assignments, payroll_runs, payroll_items, performance_reviews, hr_documents, announcements. Payroll tables store calculations and reports only.
+• Ops: notifications, notification_preferences, reports, support_tickets, subscriptions, plans, payments, feature_flags, admin_actions, audit_logs (append-only, hash-chained: each row stores the hash of the previous row), data_deletion_requests, webhook_events (idempotent inbox).
+• AI: ai_requests (module, model, prompt_hash, input refs, output JSON, validation result, latency, cost), match_results (job, candidate, score components, reasons, model version), scam_signals.
+3.8 Row-Level Security patterns
+-- Candidates see and edit only their own profile
+create policy cand_self on core.candidate_profiles
+  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- Employers see candidates only if opted in AND through the controlled search view
+create policy cand_discoverable on core.candidate_profiles for select using (
+  visibility in ('public','recruiter_visible')
+  and exists (select 1 from core.org_members m where m.user_id = auth.uid()
+              and m.org_role in ('owner','admin','recruiter'))
+);
+
+-- Applications: candidate sees own; org members see applications to their org's jobs
+create policy app_candidate on recruit.applications for select using (candidate_id = auth.uid());
+create policy app_org on recruit.applications for select using (
+  exists (select 1 from jobs.jobs j join core.org_members m on m.org_id = j.org_id
+          where j.id = job_id and m.user_id = auth.uid())
+);
+Contact details are never exposed through the candidate view; they are released only through the release_contact RPC after a contact_requests row is approved by the candidate. Write pgTAP tests for each policy that prove cross-tenant access fails.
+4. Backend specification
+4.1 Service boundaries (Edge Functions)
+Function
+Responsibility
+auth-hooks
+Phone OTP, role assignment, consent capture, abuse throttling
+resume-parse
+Extract text/fields from PDF, DOCX, image (OCR); return structured JSON for user review
+job-publish
+Validate job, run scam scoring, route to review or publish, generate embeddings
+job-search
+Hybrid keyword + semantic search with explainable reasons
+match-engine
+Compute transparent score components for candidate–job pairs
+application-submit
+Idempotent apply, snapshot CV and match breakdown, emit events
+auto-apply-runner
+Scheduled; applies only within user rules, daily cap and approved CV
+alerts-dispatch
+Queue consumer for job alerts (push, SMS, email)
+voice-intent
+Speech text to structured filters (Nepali and English)
+ai-gateway
+Single entry for all LLM calls: auth, rate limit, prompt templates, schema validation, logging
+rewards-session
+Issue task sessions, accept heartbeats, verify content question
+rewards-approve
+Risk-score and approve completions, post ledger entries
+rewards-withdraw
+Create withdrawal holds, route to review queue
+payout-worker
+Process approved payouts through partner APIs, handle callbacks
+webhooks-payments
+Verified, idempotent inbound payment partner webhooks
+moderation
+Content and report triage, scam and spam checks
+admin-api
+Privileged operations with audit logging and step-up auth
+Every function: validates input with the shared Zod schemas, derives the caller from the JWT (never from the body), rate-limits per user and per IP, writes an audit row for sensitive actions, and returns typed errors.
+4.2 Auto Apply algorithm
+1.  Cron enqueues eligible rules (active, not paused, under daily cap).
+2.  For each rule, query newly published jobs since last_run_at that match every stored criterion.
+3.  Skip excluded organisations, jobs already applied to, and jobs where match score is under the user's threshold.
+4.  Require approved_resume_version_id; if the CV has changed since approval, skip and notify the user.
+5.  Submit through application-submit with source = 'auto_apply', store the rule snapshot, notify the user immediately.
+6.  Stop at the daily cap. Every submission appears in the user's log with a withdraw action.
+4.3 Match engine (explainable)
+Compute components independently and expose all of them:
+score = 0.40*skills + 0.20*experience + 0.15*qualification + 0.15*location + 0.10*salary
+skills        = weighted overlap of required/preferred skills (semantic similarity for near matches)
+experience    = months relevant vs required, capped at 1.0
+qualification = education level and certifications vs requirements
+location      = distance or remote compatibility
+salary        = overlap of candidate range and job range
+Return {overall, components, missing_requirements[], suggestions[], model_version}. Excluded inputs: gender, age, religion, ethnicity, caste, marital status, disability, photo. Add an automated test that fails if any excluded field is referenced in the scoring code or features. Weights are configuration, versioned, and audited.
+4.4 AI gateway rules
+• All prompts live in versioned templates; every model response must pass a JSON-schema validator or is discarded and retried once.
+• Resume parsing output is a proposal; the user confirms each field. Generation prompts forbid adding unsupported experience, and a post-check flags any claim not traceable to user-provided data.
+• Scam detection combines rules (fees demanded, off-platform contact only, suspicious salary, mismatched domain) and a model score; high scores route a job to human review with the reason shown to the reviewer. It never silently deletes a listing.
+• Nepali voice: speech-to-text, then voice-intent extracts {title, location, salary_min, employment_type, skills}; the UI shows the interpreted filters so the user can correct them.
+• Cost controls: per-user daily quotas, caching by prompt hash, cheaper model for classification, circuit breaker on provider errors.
+• No candidate personal data is sent to a model without a documented purpose; redact phone, email and ID numbers before prompts where not needed.
+4.5 Rewards backend flow
+start:      rewards-session checks eligibility + live campaign + remaining budget,
+            reserves one completion's sponsor cost (reserved_amount += cost), issues signed task session (TTL = duration + buffer)
+heartbeat:  every 5 s with monotonic counter; server accumulates watched_ms, rejects gaps, speed-ups, parallel sessions
+question:   released only after watched_ms >= duration * min_watch_ratio; answer checked server-side
+submit:     completion row = pending_review; risk score computed (device, velocity, IP/ASN, behaviour)
+approve:    low risk auto-approves; medium goes to manual queue; high is rejected + fraud_flag
+ledger:     on approval: debit campaign reserve, credit user_pending (hold period), credit platform_revenue (spread)
+release:    after the hold period a job moves user_pending to user_available
+expiry:     unfinished sessions expire and release their reservation
+Enforce: one credited completion per user per campaign, daily and hourly velocity limits, device and account linkage checks, budget never overspent, and idempotency keys on every ledger post. Display only the campaigns that are actually funded and live; never present a daily target as a promise.
+4.6 Withdrawals and payouts
+• Phase A: manual review queue; admin exports approved payouts, pays through the partner's merchant portal, then enters the provider reference. Two approvers above the threshold.
+• Phase B: automated payout API only after written partner approval. The worker is idempotent, signs requests, verifies callbacks, retries with backoff, and reconciles daily against partner statements.
+• Destination account details are encrypted at rest (pgsodium / KMS key); only the payout worker can decrypt.
+• Daily reconciliation job compares: sponsor funding received, campaign spent, user liabilities, platform revenue, payouts sent. Any mismatch raises an alert and freezes new payouts.
+4.7 Notifications
+Channels: in-app, push (FCM), email, SMS (Nepal gateways). Preference center per category, quiet hours, digest option. Transactional messages are separate from marketing and respect consent records. Job-alert fan-out is queue-based with deduplication.
+4.8 Security and compliance engineering
+• Auth: phone OTP with throttling, optional passkeys, session rotation, device list with revoke, step-up auth for admin and withdrawal actions.
+• Storage: private buckets, signed URLs under 5 minutes, virus scanning on upload, file type and size validation, EXIF stripping.
+• API hardening: strict CORS, CSP, rate limits, input size caps, request IDs, bot challenge on sign-up and rewards start.
+• Secrets in the platform secret store; rotation schedule; no secrets in the client bundle.
+• Privacy: consent ledger, export and deletion workflows (deletion anonymises but preserves ledger integrity), retention schedule per table, access logs for recruiter views of candidate data.
+• Compliance gates before launch: legal review for recruitment, overseas employment, payroll, payouts, rewards and advertising; written sponsor agreements; payment partner approval; tax handling for payouts.
+• Backups: point-in-time recovery, tested restore monthly, separate backup of ledger and audit logs.
+4.9 Observability and operations
+• Metrics: job-publish latency, search p95, application success rate, AI error and cost, queue depth, payout success rate, reward approval rate, fraud rate.
+• Alerts: ledger imbalance (page immediately), budget overspend attempt, webhook failures, queue backlog, elevated auth failures.
+• Runbooks for payout failure, fraud spike, data breach response and partner outage.
+5. Testing and acceptance
+Map every Part 19 acceptance criterion to an automated test:
+Criterion
+Test
+User cannot change own approved balance
+pgTAP: client role INSERT/UPDATE on rewards tables fails
+Campaign budget cannot be overspent
+Concurrency test: 1,000 parallel starts against a small budget never exceed funded_amount
+Completion cannot be credited twice
+Unique constraint plus replay test with the same idempotency key
+Withdrawals need approval
+E2E: payout worker refuses unapproved or single-approved large requests
+Candidate documents private
+Storage policy test: other users and other orgs receive 403
+Explainable matching
+Contract test: every match response includes component scores and reasons
+Protected attributes excluded
+Static scan plus feature-list assertion
+Works on low-end Android
+Lighthouse CI budgets on throttled profile, Playwright on a mobile emulation
+Also run: k6 load tests (search, apply, rewards heartbeats), chaos tests on the payout worker, and a security review (OWASP ASVS L2) before public launch.
+6. Build sequence (give the AI builder one step at a time)
+1.  Foundation: monorepo, design system, i18n, auth with phone OTP, roles, organizations, RLS test harness, CI.
+2.  Marketplace core: candidate profiles, employer verification, job posting, hybrid search, apply, application tracking, CV storage, admin verification queue.
+3.  Professional recruitment: ATS Kanban, questionnaires, rosters, branding pages, scheduling, analytics, subscriptions.
+4.  AI layer: AI gateway, resume parse and studio, match engine with explanations, JD generator, interview coach, voice search, scam scoring, Auto Apply.
+5.  Ecosystem: Skill Passport and assessments, Gigs, Network, local worker marketplace, Insta Hire, HR workspace.
+6.  Rewards (gated): only after signed sponsor agreements, funded budgets, payout partner and legal review. Build ledger, task sessions, risk engine, manual payouts first.
+7.  Global: multi-currency, country rules, regional languages, country-specific verification.
+After each step, the builder must output: migrations applied, RLS tests passing, new env vars, open risks, and the next step's prerequisites.
+7. Product rules carried over from the PRD
+• Rewards are optional, sponsor-funded, and never described as guaranteed income or employment; no payment for clicking ads.
+• Basic job search and applying stay free; payment never guarantees a job or interview.
+• Verification labels state exactly what was checked.
+• Recruiter discovery is opt-in, contact details are hidden until the candidate authorises access.
+• Gig payments use a legally reviewed payment partner; the platform does not hold customer funds as an unlicensed escro

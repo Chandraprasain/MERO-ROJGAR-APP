@@ -1,0 +1,6 @@
+{
+  "name": "Mero Rojgar",
+  "description": "Mero Rojgar (Mero Job Nepal) — Nepal employment, freelance gigs, AI resume & interview coach, recruiter ATS, and sponsor-funded rewards platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

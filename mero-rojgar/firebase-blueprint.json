@@ -1,0 +1,361 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account and candidate profile settings. Timestamps must use FieldValue.serverTimestamp().",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "locale": { "type": "string", "enum": ["ne", "en"] },
+        "activeRole": { "type": "string", "enum": ["job_seeker", "employer", "sponsor", "platform_admin"] },
+        "headline": { "type": "string" },
+        "district": { "type": "string" },
+        "availability": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["private", "recruiter_visible", "public"] },
+        "contactHidden": { "type": "boolean" },
+        "expectedSalaryMin": { "type": "integer" },
+        "expectedSalaryMax": { "type": "integer" },
+        "experienceMonths": { "type": "integer" },
+        "educationLevel": { "type": "string" },
+        "skills": { "type": "array" },
+        "verificationLevel": { "type": "string", "enum": ["self_reported", "document_submitted", "identity_checked"] },
+        "consentsRecruiterDiscovery": { "type": "boolean" },
+        "consentsRewardsTerms": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "locale", "activeRole", "visibility", "contactHidden", "verificationLevel", "createdAt", "updatedAt"]
+    },
+    "ResumeVersion": {
+      "title": "ResumeVersion",
+      "description": "Candidate resume snapshot version.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "language": { "type": "string", "enum": ["en", "ne"] },
+        "summary": { "type": "string" },
+        "experienceText": { "type": "string" },
+        "educationText": { "type": "string" },
+        "skills": { "type": "array" },
+        "atsScore": { "type": "integer" },
+        "aiAssisted": { "type": "boolean" },
+        "defaultCv": { "type": "boolean" },
+        "version": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "language", "atsScore", "aiAssisted", "defaultCv", "version", "createdAt", "updatedAt"]
+    },
+    "JobApplication": {
+      "title": "JobApplication",
+      "description": "Candidate job application tracking entry.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "jobId": { "type": "string" },
+        "jobTitle": { "type": "string" },
+        "orgName": { "type": "string" },
+        "resumeId": { "type": "string" },
+        "source": { "type": "string", "enum": ["manual", "auto_apply", "insta_hire"] },
+        "stage": { "type": "string", "enum": ["new", "under_review", "shortlisted", "assessment", "interview", "offer", "hired", "rejected", "withdrawn"] },
+        "matchScore": { "type": "integer" },
+        "matchSummary": { "type": "string" },
+        "questionnaireSummary": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "jobId", "jobTitle", "orgName", "resumeId", "source", "stage", "matchScore", "createdAt", "updatedAt"]
+    },
+    "AutoApplyRule": {
+      "title": "AutoApplyRule",
+      "description": "Candidate Auto Apply rule configuration.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "ruleName": { "type": "string" },
+        "keywords": { "type": "string" },
+        "district": { "type": "string" },
+        "workMode": { "type": "string", "enum": ["any", "onsite", "hybrid", "remote"] },
+        "minSalaryNpr": { "type": "integer" },
+        "minMatchThreshold": { "type": "integer" },
+        "dailyCap": { "type": "integer" },
+        "excludedOrgs": { "type": "string" },
+        "approvedResumeId": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "ruleName", "workMode", "minSalaryNpr", "minMatchThreshold", "dailyCap", "approvedResumeId", "active", "createdAt", "updatedAt"]
+    },
+    "LedgerEntry": {
+      "title": "LedgerEntry",
+      "description": "Append-only reward ledger entry in paisa.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "txnId": { "type": "string" },
+        "accountKind": { "type": "string", "enum": ["user_pending", "user_available", "user_paid_out", "withdrawal_hold"] },
+        "direction": { "type": "string", "enum": ["credit", "debit"] },
+        "amountPaisa": { "type": "integer" },
+        "reason": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "idempotencyKey": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "txnId", "accountKind", "direction", "amountPaisa", "reason", "idempotencyKey", "createdAt"]
+    },
+    "RewardCompletion": {
+      "title": "RewardCompletion",
+      "description": "Single completion record per user per sponsor campaign.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "campaignTitle": { "type": "string" },
+        "sponsorName": { "type": "string" },
+        "watchedMs": { "type": "integer" },
+        "questionPassed": { "type": "boolean" },
+        "rewardPaisa": { "type": "integer" },
+        "status": { "type": "string", "enum": ["pending_review", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "campaignId", "campaignTitle", "sponsorName", "watchedMs", "questionPassed", "rewardPaisa", "status", "createdAt"]
+    },
+    "WithdrawalRequest": {
+      "title": "WithdrawalRequest",
+      "description": "Reward payout withdrawal request.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amountPaisa": { "type": "integer" },
+        "method": { "type": "string", "enum": ["esewa", "khalti", "bank_transfer"] },
+        "destinationMasked": { "type": "string" },
+        "status": { "type": "string", "enum": ["requested", "under_review", "approved", "paid", "rejected"] },
+        "providerRef": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amountPaisa", "method", "destinationMasked", "status", "createdAt", "updatedAt"]
+    },
+    "SkillEvidence": {
+      "title": "SkillEvidence",
+      "description": "Skill Passport credential and assessment evidence.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "skillName": { "type": "string" },
+        "level": { "type": "integer" },
+        "verificationLevel": { "type": "string", "enum": ["self_reported", "document_submitted", "identity_checked", "education_checked", "employer_confirmed", "assessment_completed"] },
+        "provider": { "type": "string" },
+        "method": { "type": "string" },
+        "scorePercent": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "skillName", "level", "verificationLevel", "provider", "method", "scorePercent", "createdAt"]
+    },
+    "InterviewSession": {
+      "title": "InterviewSession",
+      "description": "AI Interview Coach session log.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "roleTitle": { "type": "string" },
+        "language": { "type": "string", "enum": ["en", "ne"] },
+        "questionCount": { "type": "integer" },
+        "summaryFeedback": { "type": "string" },
+        "transcriptPreview": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "roleTitle", "language", "questionCount", "createdAt"]
+    },
+    "JobListing": {
+      "title": "JobListing",
+      "description": "Marketplace job listing.",
+      "type": "object",
+      "properties": {
+        "postedByUserId": { "type": "string" },
+        "orgName": { "type": "string" },
+        "orgPan": { "type": "string" },
+        "orgVerificationLevel": { "type": "integer" },
+        "title": { "type": "string" },
+        "titleNe": { "type": "string" },
+        "description": { "type": "string" },
+        "employmentType": { "type": "string", "enum": ["full_time", "part_time", "contract", "internship"] },
+        "workMode": { "type": "string", "enum": ["onsite", "hybrid", "remote"] },
+        "district": { "type": "string" },
+        "salaryMin": { "type": "integer" },
+        "salaryMax": { "type": "integer" },
+        "salaryVisible": { "type": "boolean" },
+        "requiredSkills": { "type": "array" },
+        "minExperienceMonths": { "type": "integer" },
+        "educationLevel": { "type": "string" },
+        "urgent": { "type": "boolean" },
+        "scamRiskScore": { "type": "number" },
+        "scamRiskReason": { "type": "string" },
+        "status": { "type": "string", "enum": ["published", "pending_review", "paused", "closed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postedByUserId", "orgName", "orgVerificationLevel", "title", "description", "employmentType", "workMode", "district", "salaryMin", "salaryMax", "salaryVisible", "urgent", "status", "createdAt", "updatedAt"]
+    },
+    "EmployerApplicant": {
+      "title": "EmployerApplicant",
+      "description": "ATS pipeline candidate record scoped to employerUserId.",
+      "type": "object",
+      "properties": {
+        "employerUserId": { "type": "string" },
+        "applicantUserId": { "type": "string" },
+        "applicantName": { "type": "string" },
+        "applicantHeadline": { "type": "string" },
+        "jobId": { "type": "string" },
+        "jobTitle": { "type": "string" },
+        "stage": { "type": "string", "enum": ["new", "under_review", "shortlisted", "assessment", "interview", "offer", "hired", "rejected", "withdrawn"] },
+        "matchScore": { "type": "integer" },
+        "matchReasons": { "type": "string" },
+        "source": { "type": "string", "enum": ["manual", "auto_apply"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["employerUserId", "applicantUserId", "applicantName", "jobId", "jobTitle", "stage", "matchScore", "source", "createdAt", "updatedAt"]
+    },
+    "GigListing": {
+      "title": "GigListing",
+      "description": "Freelance and skilled local worker gig.",
+      "type": "object",
+      "properties": {
+        "postedByUserId": { "type": "string" },
+        "posterName": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "district": { "type": "string" },
+        "budgetNpr": { "type": "integer" },
+        "localTrade": { "type": "boolean" },
+        "milestoneCount": { "type": "integer" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "in_progress", "completed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postedByUserId", "posterName", "title", "category", "district", "budgetNpr", "localTrade", "milestoneCount", "description", "status", "createdAt", "updatedAt"]
+    },
+    "SponsorCampaign": {
+      "title": "SponsorCampaign",
+      "description": "Sponsor-funded reward campaign.",
+      "type": "object",
+      "properties": {
+        "sponsorUserId": { "type": "string" },
+        "sponsorName": { "type": "string" },
+        "title": { "type": "string" },
+        "titleNe": { "type": "string" },
+        "videoSeconds": { "type": "integer" },
+        "rewardPaisa": { "type": "integer" },
+        "fundedPaisa": { "type": "integer" },
+        "spentPaisa": { "type": "integer" },
+        "questionPrompt": { "type": "string" },
+        "questionOptions": { "type": "array" },
+        "correctOptionIndex": { "type": "integer" },
+        "termsSummary": { "type": "string" },
+        "endsAtText": { "type": "string" },
+        "status": { "type": "string", "enum": ["live", "paused", "exhausted", "pending_review"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sponsorUserId", "sponsorName", "title", "videoSeconds", "rewardPaisa", "fundedPaisa", "spentPaisa", "questionPrompt", "questionOptions", "correctOptionIndex", "termsSummary", "endsAtText", "status", "createdAt", "updatedAt"]
+    },
+    "TalentDirectoryEntry": {
+      "title": "TalentDirectoryEntry",
+      "description": "Opt-in public or recruiter-visible non-PII candidate card.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "headline": { "type": "string" },
+        "district": { "type": "string" },
+        "skills": { "type": "array" },
+        "verificationLevel": { "type": "string", "enum": ["self_reported", "document_submitted", "identity_checked"] },
+        "visibility": { "type": "string", "enum": ["public", "recruiter_visible", "private"] },
+        "openStatus": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "verificationLevel", "visibility", "updatedAt"]
+    },
+    "SavedJob": {
+      "title": "SavedJob",
+      "description": "User-bookmarked job listing reference.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "jobId": { "type": "string" },
+        "jobTitle": { "type": "string" },
+        "orgName": { "type": "string" },
+        "savedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "jobId", "savedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account and candidate profile."
+    },
+    "/users/{userId}/resumes/{resumeId}": {
+      "schema": { "$ref": "#/entities/ResumeVersion" },
+      "description": "User's resume studio versions."
+    },
+    "/users/{userId}/applications/{applicationId}": {
+      "schema": { "$ref": "#/entities/JobApplication" },
+      "description": "User's submitted job applications."
+    },
+    "/users/{userId}/auto_apply_rules/{ruleId}": {
+      "schema": { "$ref": "#/entities/AutoApplyRule" },
+      "description": "User's Auto Apply rules."
+    },
+    "/users/{userId}/ledger_entries/{entryId}": {
+      "schema": { "$ref": "#/entities/LedgerEntry" },
+      "description": "Append-only double-entry reward ledger lines."
+    },
+    "/users/{userId}/reward_completions/{campaignId}": {
+      "schema": { "$ref": "#/entities/RewardCompletion" },
+      "description": "Single completion record per campaign per user."
+    },
+    "/users/{userId}/withdrawals/{withdrawalId}": {
+      "schema": { "$ref": "#/entities/WithdrawalRequest" },
+      "description": "User's reward withdrawal requests."
+    },
+    "/users/{userId}/skill_evidence/{evidenceId}": {
+      "schema": { "$ref": "#/entities/SkillEvidence" },
+      "description": "User's Skill Passport evidence entries."
+    },
+    "/users/{userId}/interview_sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/InterviewSession" },
+      "description": "User's AI Interview Coach transcripts and feedback."
+    },
+    "/users/{userId}/saved_jobs/{jobId}": {
+      "schema": { "$ref": "#/entities/SavedJob" },
+      "description": "User's saved/bookmarked jobs."
+    },
+    "/jobs/{jobId}": {
+      "schema": { "$ref": "#/entities/JobListing" },
+      "description": "Published and employer-managed job listings."
+    },
+    "/employer_applicants/{applicationId}": {
+      "schema": { "$ref": "#/entities/EmployerApplicant" },
+      "description": "Employer ATS pipeline applicant records."
+    },
+    "/gigs/{gigId}": {
+      "schema": { "$ref": "#/entities/GigListing" },
+      "description": "Freelance and local skilled worker gigs."
+    },
+    "/campaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/SponsorCampaign" },
+      "description": "Sponsor-funded reward campaigns."
+    },
+    "/talent_directory/{userId}": {
+      "schema": { "$ref": "#/entities/TalentDirectoryEntry" },
+      "description": "Opt-in non-PII candidate discovery directory."
+    }
+  }
+}

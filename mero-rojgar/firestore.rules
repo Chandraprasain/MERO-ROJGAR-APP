@@ -1,0 +1,494 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitive Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email == 'abishekshakya1221@gmail.com';
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    // --- Entity Validation Helpers ---
+
+    function isValidUserProfile(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+        data.locale in ['ne', 'en'] &&
+        data.activeRole in ['job_seeker', 'employer', 'sponsor', 'platform_admin'] &&
+        data.visibility in ['private', 'recruiter_visible', 'public'] &&
+        data.contactHidden is bool &&
+        data.verificationLevel in ['self_reported', 'document_submitted', 'identity_checked'] &&
+        (!('headline' in data) || (data.headline is string && data.headline.size() <= 120)) &&
+        (!('district' in data) || (data.district is string && data.district.size() <= 60)) &&
+        (!('availability' in data) || (data.availability is string && data.availability.size() <= 40)) &&
+        (!('expectedSalaryMin' in data) || (data.expectedSalaryMin is int && data.expectedSalaryMin >= 0)) &&
+        (!('expectedSalaryMax' in data) || (data.expectedSalaryMax is int && data.expectedSalaryMax >= 0)) &&
+        (!('experienceMonths' in data) || (data.experienceMonths is int && data.experienceMonths >= 0)) &&
+        (!('educationLevel' in data) || (data.educationLevel is string && data.educationLevel.size() <= 60)) &&
+        (!('skills' in data) || (data.skills is list && data.skills.size() <= 30 && (data.skills.size() == 0 || data.skills[0] is string))) &&
+        (!('consentsRecruiterDiscovery' in data) || data.consentsRecruiterDiscovery is bool) &&
+        (!('consentsRewardsTerms' in data) || data.consentsRewardsTerms is bool) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidResumeVersion(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+        data.language in ['en', 'ne'] &&
+        data.atsScore is int && data.atsScore >= 0 && data.atsScore <= 100 &&
+        data.aiAssisted is bool &&
+        data.defaultCv is bool &&
+        data.version is int && data.version >= 1 &&
+        (!('summary' in data) || (data.summary is string && data.summary.size() <= 1500)) &&
+        (!('experienceText' in data) || (data.experienceText is string && data.experienceText.size() <= 3000)) &&
+        (!('educationText' in data) || (data.educationText is string && data.educationText.size() <= 1500)) &&
+        (!('skills' in data) || (data.skills is list && data.skills.size() <= 30 && (data.skills.size() == 0 || data.skills[0] is string))) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidJobApplication(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.jobId is string && data.jobId.size() >= 1 && data.jobId.size() <= 128 &&
+        data.jobTitle is string && data.jobTitle.size() >= 1 && data.jobTitle.size() <= 120 &&
+        data.orgName is string && data.orgName.size() >= 1 && data.orgName.size() <= 120 &&
+        data.resumeId is string && data.resumeId.size() >= 1 && data.resumeId.size() <= 128 &&
+        data.source in ['manual', 'auto_apply', 'insta_hire'] &&
+        data.stage in ['new', 'under_review', 'shortlisted', 'assessment', 'interview', 'offer', 'hired', 'rejected', 'withdrawn'] &&
+        data.matchScore is int && data.matchScore >= 0 && data.matchScore <= 100 &&
+        (!('matchSummary' in data) || (data.matchSummary is string && data.matchSummary.size() <= 300)) &&
+        (!('questionnaireSummary' in data) || (data.questionnaireSummary is string && data.questionnaireSummary.size() <= 1000)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAutoApplyRule(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.ruleName is string && data.ruleName.size() >= 1 && data.ruleName.size() <= 80 &&
+        data.workMode in ['any', 'onsite', 'hybrid', 'remote'] &&
+        data.minSalaryNpr is int && data.minSalaryNpr >= 0 &&
+        data.minMatchThreshold is int && data.minMatchThreshold >= 0 && data.minMatchThreshold <= 100 &&
+        data.dailyCap is int && data.dailyCap >= 1 && data.dailyCap <= 20 &&
+        data.approvedResumeId is string && data.approvedResumeId.size() >= 1 && data.approvedResumeId.size() <= 128 &&
+        data.active is bool &&
+        (!('keywords' in data) || (data.keywords is string && data.keywords.size() <= 120)) &&
+        (!('district' in data) || (data.district is string && data.district.size() <= 60)) &&
+        (!('excludedOrgs' in data) || (data.excludedOrgs is string && data.excludedOrgs.size() <= 300)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidLedgerEntry(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.txnId is string && data.txnId.size() >= 1 && data.txnId.size() <= 128 &&
+        data.accountKind in ['user_pending', 'user_available', 'user_paid_out', 'withdrawal_hold'] &&
+        data.direction in ['credit', 'debit'] &&
+        data.amountPaisa is int && data.amountPaisa > 0 && data.amountPaisa <= 100000000 &&
+        data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 120 &&
+        data.idempotencyKey is string && data.idempotencyKey.size() >= 1 && data.idempotencyKey.size() <= 128 &&
+        (!('campaignId' in data) || (data.campaignId is string && data.campaignId.size() <= 128)) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidRewardCompletion(data, userId, campaignId) {
+      return data.userId is string && data.userId == userId &&
+        data.campaignId is string && data.campaignId == campaignId &&
+        data.campaignTitle is string && data.campaignTitle.size() >= 1 && data.campaignTitle.size() <= 120 &&
+        data.sponsorName is string && data.sponsorName.size() >= 1 && data.sponsorName.size() <= 100 &&
+        data.watchedMs is int && data.watchedMs > 0 &&
+        data.questionPassed is bool && data.questionPassed == true &&
+        data.rewardPaisa is int && data.rewardPaisa > 0 && data.rewardPaisa <= 1000000 &&
+        data.status in ['pending_review', 'approved', 'rejected'] &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidWithdrawal(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.amountPaisa is int && data.amountPaisa >= 10000 && data.amountPaisa <= 100000000 &&
+        data.method in ['esewa', 'khalti', 'bank_transfer'] &&
+        data.destinationMasked is string && data.destinationMasked.size() >= 3 && data.destinationMasked.size() <= 80 &&
+        data.status in ['requested', 'under_review', 'approved', 'paid', 'rejected'] &&
+        (!('providerRef' in data) || (data.providerRef is string && data.providerRef.size() <= 100)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidSkillEvidence(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.skillName is string && data.skillName.size() >= 1 && data.skillName.size() <= 60 &&
+        data.level is int && data.level >= 1 && data.level <= 5 &&
+        data.verificationLevel in ['self_reported', 'document_submitted', 'identity_checked', 'education_checked', 'employer_confirmed', 'assessment_completed'] &&
+        data.provider is string && data.provider.size() >= 1 && data.provider.size() <= 100 &&
+        data.method is string && data.method.size() >= 1 && data.method.size() <= 100 &&
+        data.scorePercent is int && data.scorePercent >= 0 && data.scorePercent <= 100 &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidInterviewSession(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.roleTitle is string && data.roleTitle.size() >= 1 && data.roleTitle.size() <= 100 &&
+        data.language in ['en', 'ne'] &&
+        data.questionCount is int && data.questionCount >= 1 &&
+        (!('summaryFeedback' in data) || (data.summaryFeedback is string && data.summaryFeedback.size() <= 2000)) &&
+        (!('transcriptPreview' in data) || (data.transcriptPreview is string && data.transcriptPreview.size() <= 3000)) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidSavedJob(data, userId, jobId) {
+      return data.userId is string && data.userId == userId &&
+        data.jobId is string && data.jobId == jobId &&
+        (!('jobTitle' in data) || (data.jobTitle is string && data.jobTitle.size() <= 120)) &&
+        (!('orgName' in data) || (data.orgName is string && data.orgName.size() <= 120)) &&
+        isValidTimestamp(data.savedAt);
+    }
+
+    function isValidJob(data) {
+      return data.postedByUserId is string && data.postedByUserId.size() >= 1 && data.postedByUserId.size() <= 128 &&
+        data.orgName is string && data.orgName.size() >= 1 && data.orgName.size() <= 100 &&
+        data.orgVerificationLevel is int && data.orgVerificationLevel >= 0 && data.orgVerificationLevel <= 3 &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 120 &&
+        data.description is string && data.description.size() >= 10 && data.description.size() <= 5000 &&
+        data.employmentType in ['full_time', 'part_time', 'contract', 'internship'] &&
+        data.workMode in ['onsite', 'hybrid', 'remote'] &&
+        data.district is string && data.district.size() >= 1 && data.district.size() <= 60 &&
+        data.salaryMin is int && data.salaryMin >= 0 &&
+        data.salaryMax is int && data.salaryMax >= data.salaryMin &&
+        data.salaryVisible is bool &&
+        data.urgent is bool &&
+        data.status in ['published', 'pending_review', 'paused', 'closed'] &&
+        (!('titleNe' in data) || (data.titleNe is string && data.titleNe.size() <= 120)) &&
+        (!('orgPan' in data) || (data.orgPan is string && data.orgPan.size() <= 30)) &&
+        (!('requiredSkills' in data) || (data.requiredSkills is list && data.requiredSkills.size() <= 20 && (data.requiredSkills.size() == 0 || data.requiredSkills[0] is string))) &&
+        (!('minExperienceMonths' in data) || (data.minExperienceMonths is int && data.minExperienceMonths >= 0)) &&
+        (!('educationLevel' in data) || (data.educationLevel is string && data.educationLevel.size() <= 60)) &&
+        (!('scamRiskScore' in data) || (data.scamRiskScore is number && data.scamRiskScore >= 0.0 && data.scamRiskScore <= 1.0)) &&
+        (!('scamRiskReason' in data) || (data.scamRiskReason is string && data.scamRiskReason.size() <= 300)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidEmployerApplicant(data) {
+      return data.employerUserId is string && data.employerUserId.size() >= 1 && data.employerUserId.size() <= 128 &&
+        data.applicantUserId is string && data.applicantUserId.size() >= 1 && data.applicantUserId.size() <= 128 &&
+        data.applicantName is string && data.applicantName.size() >= 1 && data.applicantName.size() <= 80 &&
+        data.jobId is string && data.jobId.size() >= 1 && data.jobId.size() <= 128 &&
+        data.jobTitle is string && data.jobTitle.size() >= 1 && data.jobTitle.size() <= 120 &&
+        data.stage in ['new', 'under_review', 'shortlisted', 'assessment', 'interview', 'offer', 'hired', 'rejected', 'withdrawn'] &&
+        data.matchScore is int && data.matchScore >= 0 && data.matchScore <= 100 &&
+        data.source in ['manual', 'auto_apply'] &&
+        (!('applicantHeadline' in data) || (data.applicantHeadline is string && data.applicantHeadline.size() <= 120)) &&
+        (!('matchReasons' in data) || (data.matchReasons is string && data.matchReasons.size() <= 400)) &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidGig(data) {
+      return data.postedByUserId is string && data.postedByUserId.size() >= 1 && data.postedByUserId.size() <= 128 &&
+        data.posterName is string && data.posterName.size() >= 1 && data.posterName.size() <= 80 &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 120 &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+        data.district is string && data.district.size() >= 1 && data.district.size() <= 60 &&
+        data.budgetNpr is int && data.budgetNpr > 0 && data.budgetNpr <= 10000000 &&
+        data.localTrade is bool &&
+        data.milestoneCount is int && data.milestoneCount >= 1 && data.milestoneCount <= 10 &&
+        data.description is string && data.description.size() >= 5 && data.description.size() <= 2000 &&
+        data.status in ['open', 'in_progress', 'completed'] &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCampaign(data) {
+      return data.sponsorUserId is string && data.sponsorUserId.size() >= 1 && data.sponsorUserId.size() <= 128 &&
+        data.sponsorName is string && data.sponsorName.size() >= 1 && data.sponsorName.size() <= 100 &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 120 &&
+        data.videoSeconds is int && data.videoSeconds >= 5 && data.videoSeconds <= 300 &&
+        data.rewardPaisa is int && data.rewardPaisa > 0 && data.rewardPaisa <= 1000000 &&
+        data.fundedPaisa is int && data.fundedPaisa >= data.rewardPaisa &&
+        data.spentPaisa is int && data.spentPaisa >= 0 && data.spentPaisa <= data.fundedPaisa &&
+        data.questionPrompt is string && data.questionPrompt.size() >= 5 && data.questionPrompt.size() <= 300 &&
+        data.questionOptions is list && data.questionOptions.size() >= 2 && data.questionOptions.size() <= 4 &&
+        data.correctOptionIndex is int && data.correctOptionIndex >= 0 && data.correctOptionIndex < data.questionOptions.size() &&
+        data.termsSummary is string && data.termsSummary.size() >= 1 && data.termsSummary.size() <= 300 &&
+        data.endsAtText is string && data.endsAtText.size() >= 1 && data.endsAtText.size() <= 40 &&
+        data.status in ['live', 'paused', 'exhausted', 'pending_review'] &&
+        (!('titleNe' in data) || (data.titleNe is string && data.titleNe.size() <= 120)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidTalentEntry(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+        data.verificationLevel in ['self_reported', 'document_submitted', 'identity_checked'] &&
+        data.visibility in ['public', 'recruiter_visible', 'private'] &&
+        (!('headline' in data) || (data.headline is string && data.headline.size() <= 120)) &&
+        (!('district' in data) || (data.district is string && data.district.size() <= 60)) &&
+        (!('openStatus' in data) || (data.openStatus is string && data.openStatus.size() <= 60)) &&
+        (!('skills' in data) || (data.skills is list && data.skills.size() <= 30 && (data.skills.size() == 0 || data.skills[0] is string))) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    // --- Collection Rules ---
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isOwner(userId);
+      allow create: if isValidId(userId) && isOwner(userId) &&
+        incoming().keys().hasAll(['userId', 'displayName', 'locale', 'activeRole', 'visibility', 'contactHidden', 'verificationLevel', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'displayName', 'locale', 'activeRole', 'headline', 'district', 'availability', 'visibility', 'contactHidden', 'expectedSalaryMin', 'expectedSalaryMax', 'experienceMonths', 'educationLevel', 'skills', 'verificationLevel', 'consentsRecruiterDiscovery', 'consentsRewardsTerms', 'createdAt', 'updatedAt']) &&
+        isValidUserProfile(incoming(), userId);
+      allow update: if isValidId(userId) && isOwner(userId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'locale', 'activeRole', 'headline', 'district', 'availability', 'visibility', 'contactHidden', 'expectedSalaryMin', 'expectedSalaryMax', 'experienceMonths', 'educationLevel', 'skills', 'consentsRecruiterDiscovery', 'consentsRewardsTerms', 'updatedAt']);
+      allow delete: if isValidId(userId) && isOwner(userId);
+
+      match /resumes/{resumeId} {
+        allow get: if isValidId(resumeId) && isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isValidId(resumeId) && isOwner(userId) &&
+          incoming().keys().hasAll(['userId', 'title', 'language', 'atsScore', 'aiAssisted', 'defaultCv', 'version', 'createdAt', 'updatedAt']) &&
+          incoming().keys().hasOnly(['userId', 'title', 'language', 'summary', 'experienceText', 'educationText', 'skills', 'atsScore', 'aiAssisted', 'defaultCv', 'version', 'createdAt', 'updatedAt']) &&
+          isValidResumeVersion(incoming(), userId);
+        allow update: if isValidId(resumeId) && isOwner(userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidResumeVersion(incoming(), userId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'language', 'summary', 'experienceText', 'educationText', 'skills', 'atsScore', 'aiAssisted', 'defaultCv', 'version', 'updatedAt']);
+        allow delete: if isValidId(resumeId) && isOwner(userId);
+      }
+
+      match /applications/{applicationId} {
+        allow get: if isValidId(applicationId) && isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isValidId(applicationId) && isOwner(userId) &&
+          incoming().keys().hasAll(['userId', 'jobId', 'jobTitle', 'orgName', 'resumeId', 'source', 'stage', 'matchScore', 'createdAt', 'updatedAt']) &&
+          incoming().keys().hasOnly(['userId', 'jobId', 'jobTitle', 'orgName', 'resumeId', 'source', 'stage', 'matchScore', 'matchSummary', 'questionnaireSummary', 'createdAt', 'updatedAt']) &&
+          isValidJobApplication(incoming(), userId);
+        allow update: if isValidId(applicationId) && isOwner(userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          existing().stage != 'withdrawn' &&
+          isValidJobApplication(incoming(), userId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['stage', 'updatedAt']);
+        allow delete: if isValidId(applicationId) && isOwner(userId);
+      }
+
+      match /auto_apply_rules/{ruleId} {
+        allow get: if isValidId(ruleId) && isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isValidId(ruleId) && isOwner(userId) &&
+          incoming().keys().hasAll(['userId', 'ruleName', 'workMode', 'minSalaryNpr', 'minMatchThreshold', 'dailyCap', 'approvedResumeId', 'active', 'createdAt', 'updatedAt']) &&
+          incoming().keys().hasOnly(['userId', 'ruleName', 'keywords', 'district', 'workMode', 'minSalaryNpr', 'minMatchThreshold', 'dailyCap', 'excludedOrgs', 'approvedResumeId', 'active', 'createdAt', 'updatedAt']) &&
+          isValidAutoApplyRule(incoming(), userId);
+        allow update: if isValidId(ruleId) && isOwner(userId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidAutoApplyRule(incoming(), userId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['ruleName', 'keywords', 'district', 'workMode', 'minSalaryNpr', 'minMatchThreshold', 'dailyCap', 'excludedOrgs', 'approvedResumeId', 'active', 'updatedAt']);
+        allow delete: if isValidId(ruleId) && isOwner(userId);
+      }
+
+      // Append-only double-entry ledger: no update or delete allowed
+      match /ledger_entries/{entryId} {
+        allow get: if isValidId(entryId) && isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isValidId(entryId) && isOwner(userId) &&
+          incoming().keys().hasAll(['userId', 'txnId', 'accountKind', 'direction', 'amountPaisa', 'reason', 'idempotencyKey', 'createdAt']) &&
+          incoming().keys().hasOnly(['userId', 'txnId', 'accountKind', 'direction', 'amountPaisa', 'reason', 'campaignId', 'idempotencyKey', 'createdAt']) &&
+          isValidLedgerEntry(incoming(), userId);
+        allow update, delete: if false;
+      }
+
+      // One completion per user per campaignId
+      match /reward_completions/{campaignId} {
+        allow get: if isValidId(campaignId) && isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isValidId(campaignId) && isOwner(userId) &&
+          !exists(/databases/$(database)/documents/users/$(userId)/reward_completions/$(campaignId)) &&
+          incoming().keys().hasAll(['userId', 'campaignId', 'campaignTitle', 'sponsorName', 'watchedMs', 'questionPassed', 'rewardPaisa', 'status', 'createdAt']) &&
+          incoming().keys().hasOnly(['userId', 'campaignId', 'campaignTitle', 'sponsorName', 'watchedMs', 'questionPassed', 'rewardPaisa', 'status', 'createdAt']) &&
+          isValidRewardCompletion(incoming(), userId, campaignId);
+        allow update, delete: if false;
+      }
+
+      match /withdrawals/{withdrawalId} {
+        allow get: if isValidId(withdrawalId) && (isOwner(userId) || isAdmin());
+        allow list: if isOwner(userId);
+        allow create: if isValidId(withdrawalId) && isOwner(userId) &&
+          incoming().status == 'requested' &&
+          incoming().keys().hasAll(['userId', 'amountPaisa', 'method', 'destinationMasked', 'status', 'createdAt', 'updatedAt']) &&
+          incoming().keys().hasOnly(['userId', 'amountPaisa', 'method', 'destinationMasked', 'status', 'providerRef', 'createdAt', 'updatedAt']) &&
+          isValidWithdrawal(incoming(), userId);
+        allow update: if isValidId(withdrawalId) && isAdmin() &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidWithdrawal(incoming(), userId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'providerRef', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      match /skill_evidence/{evidenceId} {
+        allow get: if isValidId(evidenceId) && isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isValidId(evidenceId) && isOwner(userId) &&
+          incoming().keys().hasAll(['userId', 'skillName', 'level', 'verificationLevel', 'provider', 'method', 'scorePercent', 'createdAt']) &&
+          incoming().keys().hasOnly(['userId', 'skillName', 'level', 'verificationLevel', 'provider', 'method', 'scorePercent', 'createdAt']) &&
+          isValidSkillEvidence(incoming(), userId);
+        allow update, delete: if isValidId(evidenceId) && isOwner(userId) && false;
+      }
+
+      match /interview_sessions/{sessionId} {
+        allow get: if isValidId(sessionId) && isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isValidId(sessionId) && isOwner(userId) &&
+          incoming().keys().hasAll(['userId', 'roleTitle', 'language', 'questionCount', 'createdAt']) &&
+          incoming().keys().hasOnly(['userId', 'roleTitle', 'language', 'questionCount', 'summaryFeedback', 'transcriptPreview', 'createdAt']) &&
+          isValidInterviewSession(incoming(), userId);
+        allow update, delete: if isValidId(sessionId) && isOwner(userId);
+      }
+
+      match /saved_jobs/{jobId} {
+        allow get: if isValidId(jobId) && isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isValidId(jobId) && isOwner(userId) &&
+          incoming().keys().hasAll(['userId', 'jobId', 'savedAt']) &&
+          incoming().keys().hasOnly(['userId', 'jobId', 'jobTitle', 'orgName', 'savedAt']) &&
+          isValidSavedJob(incoming(), userId, jobId);
+        allow update: if false;
+        allow delete: if isValidId(jobId) && isOwner(userId);
+      }
+    }
+
+    match /jobs/{jobId} {
+      allow get: if isValidId(jobId) && isSignedIn() &&
+        (existing().status == 'published' || existing().postedByUserId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() &&
+        (resource.data.status == 'published' || resource.data.postedByUserId == request.auth.uid || isAdmin());
+      allow create: if isValidId(jobId) && isSignedIn() &&
+        incoming().postedByUserId == request.auth.uid &&
+        incoming().keys().hasAll(['postedByUserId', 'orgName', 'orgVerificationLevel', 'title', 'description', 'employmentType', 'workMode', 'district', 'salaryMin', 'salaryMax', 'salaryVisible', 'urgent', 'status', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['postedByUserId', 'orgName', 'orgPan', 'orgVerificationLevel', 'title', 'titleNe', 'description', 'employmentType', 'workMode', 'district', 'salaryMin', 'salaryMax', 'salaryVisible', 'requiredSkills', 'minExperienceMonths', 'educationLevel', 'urgent', 'scamRiskScore', 'scamRiskReason', 'status', 'createdAt', 'updatedAt']) &&
+        isValidJob(incoming());
+      allow update: if isValidId(jobId) && isSignedIn() &&
+        (existing().postedByUserId == request.auth.uid || isAdmin()) &&
+        incoming().postedByUserId == existing().postedByUserId &&
+        incoming().createdAt == existing().createdAt &&
+        isValidJob(incoming()) &&
+        (
+          (existing().postedByUserId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'titleNe', 'description', 'salaryMin', 'salaryMax', 'salaryVisible', 'urgent', 'status', 'updatedAt'])) ||
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['orgVerificationLevel', 'scamRiskScore', 'scamRiskReason', 'status', 'updatedAt']))
+        );
+      allow delete: if isValidId(jobId) && isSignedIn() && existing().postedByUserId == request.auth.uid;
+    }
+
+    match /employer_applicants/{applicationId} {
+      allow get: if isValidId(applicationId) && isSignedIn() &&
+        (existing().employerUserId == request.auth.uid || existing().applicantUserId == request.auth.uid);
+      allow list: if isSignedIn() &&
+        (resource.data.employerUserId == request.auth.uid || resource.data.applicantUserId == request.auth.uid);
+      allow create: if isValidId(applicationId) && isSignedIn() &&
+        incoming().applicantUserId == request.auth.uid &&
+        incoming().keys().hasAll(['employerUserId', 'applicantUserId', 'applicantName', 'jobId', 'jobTitle', 'stage', 'matchScore', 'source', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['employerUserId', 'applicantUserId', 'applicantName', 'applicantHeadline', 'jobId', 'jobTitle', 'stage', 'matchScore', 'matchReasons', 'source', 'notes', 'createdAt', 'updatedAt']) &&
+        isValidEmployerApplicant(incoming());
+      allow update: if isValidId(applicationId) && isSignedIn() &&
+        incoming().employerUserId == existing().employerUserId &&
+        incoming().applicantUserId == existing().applicantUserId &&
+        incoming().createdAt == existing().createdAt &&
+        isValidEmployerApplicant(incoming()) &&
+        (
+          (existing().employerUserId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['stage', 'notes', 'updatedAt'])) ||
+          (existing().applicantUserId == request.auth.uid && incoming().stage == 'withdrawn' && incoming().diff(existing()).affectedKeys().hasOnly(['stage', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+
+    match /gigs/{gigId} {
+      allow get: if isValidId(gigId) && isSignedIn() &&
+        (existing().status == 'open' || existing().postedByUserId == request.auth.uid);
+      allow list: if isSignedIn() &&
+        (resource.data.status == 'open' || resource.data.postedByUserId == request.auth.uid);
+      allow create: if isValidId(gigId) && isSignedIn() &&
+        incoming().postedByUserId == request.auth.uid &&
+        incoming().keys().hasAll(['postedByUserId', 'posterName', 'title', 'category', 'district', 'budgetNpr', 'localTrade', 'milestoneCount', 'description', 'status', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['postedByUserId', 'posterName', 'title', 'category', 'district', 'budgetNpr', 'localTrade', 'milestoneCount', 'description', 'status', 'createdAt', 'updatedAt']) &&
+        isValidGig(incoming());
+      allow update: if isValidId(gigId) && isSignedIn() &&
+        existing().postedByUserId == request.auth.uid &&
+        incoming().postedByUserId == existing().postedByUserId &&
+        incoming().createdAt == existing().createdAt &&
+        isValidGig(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'budgetNpr', 'description', 'updatedAt']);
+      allow delete: if isValidId(gigId) && isSignedIn() && existing().postedByUserId == request.auth.uid;
+    }
+
+    match /campaigns/{campaignId} {
+      allow get: if isValidId(campaignId) && isSignedIn() &&
+        (existing().status == 'live' || existing().sponsorUserId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() &&
+        (resource.data.status == 'live' || resource.data.sponsorUserId == request.auth.uid || isAdmin());
+      allow create: if isValidId(campaignId) && isSignedIn() &&
+        incoming().sponsorUserId == request.auth.uid &&
+        incoming().keys().hasAll(['sponsorUserId', 'sponsorName', 'title', 'videoSeconds', 'rewardPaisa', 'fundedPaisa', 'spentPaisa', 'questionPrompt', 'questionOptions', 'correctOptionIndex', 'termsSummary', 'endsAtText', 'status', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['sponsorUserId', 'sponsorName', 'title', 'titleNe', 'videoSeconds', 'rewardPaisa', 'fundedPaisa', 'spentPaisa', 'questionPrompt', 'questionOptions', 'correctOptionIndex', 'termsSummary', 'endsAtText', 'status', 'createdAt', 'updatedAt']) &&
+        isValidCampaign(incoming());
+      allow update: if isValidId(campaignId) && isSignedIn() &&
+        (existing().sponsorUserId == request.auth.uid || isAdmin()) &&
+        incoming().sponsorUserId == existing().sponsorUserId &&
+        incoming().createdAt == existing().createdAt &&
+        isValidCampaign(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'fundedPaisa', 'spentPaisa', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /talent_directory/{userId} {
+      allow get: if isValidId(userId) && isSignedIn() &&
+        (existing().visibility in ['public', 'recruiter_visible'] || isOwner(userId));
+      allow list: if isSignedIn() &&
+        (resource.data.visibility in ['public', 'recruiter_visible'] || resource.data.userId == request.auth.uid);
+      allow create: if isValidId(userId) && isOwner(userId) &&
+        incoming().keys().hasAll(['userId', 'displayName', 'verificationLevel', 'visibility', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'displayName', 'headline', 'district', 'skills', 'verificationLevel', 'visibility', 'openStatus', 'updatedAt']) &&
+        isValidTalentEntry(incoming(), userId);
+      allow update: if isValidId(userId) && isOwner(userId) &&
+        incoming().userId == existing().userId &&
+        isValidTalentEntry(incoming(), userId) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'headline', 'district', 'skills', 'visibility', 'openStatus', 'updatedAt']);
+      allow delete: if isValidId(userId) && isOwner(userId);
+    }
+  }
+}
